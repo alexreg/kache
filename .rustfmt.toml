@@ -1,0 +1,7 @@
+group_imports = "StdExternalCrate"
+hard_tabs = true
+match_block_trailing_comma = true
+max_width = 10000
+reorder_impl_items = true
+struct_lit_single_line = false
+use_small_heuristics = "Off"
