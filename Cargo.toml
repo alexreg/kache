@@ -1,0 +1,13 @@
+[package]
+name = "kache"
+version = "0.1.0"
+authors = ["Alexander Regueiro <alex@noldorin.com>"]
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.53"
+clap = { version = "3.0.10", features = ["derive", "unicode", "wrap_help"] }
+humantime = "2.1.0"
+log = "0.4.14"
+# rkyv = "0.7.31"
+speedy = "0.8.1"
