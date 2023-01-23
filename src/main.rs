@@ -21,9 +21,14 @@ use std::{
 use anyhow::{anyhow, bail, Result};
 use clap::{ArgGroup, Parser};
 use humantime::{Duration, Timestamp as SystemTime};
+use lazy_static::lazy_static;
 use speedy::{Readable, Writable};
 
-const CACHE_DIR: &'static str = "kache";
+const CACHE_DIR_NAME: &'static str = "kache";
+
+lazy_static! {
+	static ref CACHE_DIR: PathBuf = temp_dir().join(CACHE_DIR_NAME);
+}
 
 #[derive(Debug, Hash, PartialEq, Eq)]
 struct CacheEntry {
@@ -46,6 +51,10 @@ struct CacheEntryInfo {
 #[clap(author, version, about, long_about = None)]
 #[clap(group(ArgGroup::new("action")))]
 struct Cli {
+	/// Specify cache directory to use
+	#[arg(long = "cache", value_name = "DIRECTORY", default_value = CACHE_DIR.as_os_str())]
+	cache_dir_path: PathBuf,
+
 	/// Check for cache entry
 	#[arg(short, long, group = "action")]
 	check: bool,
@@ -84,18 +93,13 @@ struct Cli {
 }
 
 impl CacheEntry {
-	fn cache_dir() -> PathBuf {
-		temp_dir().join(CACHE_DIR)
-	}
-
-	fn new<C: AsRef<[OsString]> + Hash>(command: C) -> Result<Self> {
+	fn new<C: AsRef<[OsString]> + Hash, P: AsRef<Path>>(command: C, cache_dir_path: P) -> Result<Self> {
 		let mut hasher = DefaultHasher::new();
 		command.hash(&mut hasher);
 		let id = format!("{:016x}", hasher.finish());
 
-		let dir_path = Self::cache_dir();
-		fs::create_dir_all(&dir_path)?;
-		let info_path = dir_path.join(&id);
+		fs::create_dir_all(&cache_dir_path)?;
+		let info_path = cache_dir_path.as_ref().to_path_buf().join(&id);
 		let stdout_path = info_path.with_extension("stdout");
 		let stderr_path = info_path.with_extension("stderr");
 
@@ -175,11 +179,10 @@ impl CacheEntryInfo {
 	}
 }
 
-fn clear() -> Result<()> {
-	let cache_dir = CacheEntry::cache_dir();
-	match fs::remove_dir_all(&cache_dir) {
+fn clear<P: AsRef<Path>>(cache_dir_path: P) -> Result<()> {
+	match fs::remove_dir_all(&cache_dir_path) {
 		Ok(()) => {
-			println!("Cache directory removed: {}", cache_dir.display());
+			println!("Cache directory removed: {}", cache_dir_path.as_ref().display());
 			Ok(())
 		},
 		Err(err) if err.kind() == io::ErrorKind::NotFound => Err(anyhow!("Cache directory not found")),
@@ -187,9 +190,8 @@ fn clear() -> Result<()> {
 	}
 }
 
-fn purge() -> Result<()> {
-	let cache_dir = CacheEntry::cache_dir();
-	match fs::read_dir(&cache_dir) {
+fn purge<P: AsRef<Path>>(cache_dir_path: P) -> Result<()> {
+	match fs::read_dir(&cache_dir_path) {
 		Ok(dir) => {
 			for entry in dir {
 				let entry = entry?;
@@ -204,7 +206,7 @@ fn purge() -> Result<()> {
 					}
 				}
 			}
-			println!("Cache directory purged of expired entries: {}", cache_dir.display());
+			println!("Cache directory purged of expired entries: {}", cache_dir_path.as_ref().display());
 			Ok(())
 		},
 		Err(err) if err.kind() == io::ErrorKind::NotFound => Err(anyhow!("Cache directory not found")),
@@ -216,14 +218,14 @@ fn main() -> Result<()> {
 	let cli = Cli::parse();
 
 	if cli.clear {
-		return clear();
+		return clear(&cli.cache_dir_path);
 	}
 
 	if cli.purge {
-		return purge();
+		return purge(&cli.cache_dir_path);
 	}
 
-	let cache_entry = CacheEntry::new(&cli.command)?;
+	let cache_entry = CacheEntry::new(&cli.command, &cli.cache_dir_path)?;
 
 	if cli.check {
 		if cache_entry.exists() {
