@@ -19,7 +19,7 @@ use std::{
 };
 
 use anyhow::{anyhow, bail, Result};
-use clap::{AppSettings, Parser};
+use clap::Parser;
 use humantime::{Duration, Timestamp as SystemTime};
 use speedy::{Readable, Writable};
 
@@ -46,38 +46,37 @@ struct CacheEntryInfo {
 /// Cache the output of a program.
 #[derive(Debug, Parser)]
 #[clap(author, version, about, long_about = None)]
-#[clap(global_setting(AppSettings::TrailingVarArg))]
 struct Cli {
 	/// Check for cache entry
-	#[clap(short, long, conflicts_with = "remove", conflicts_with = "clear")]
+	#[arg(short, long, conflicts_with = "remove", conflicts_with = "clear")]
 	check: bool,
 
 	/// Remove cache entry
-	#[clap(short, long, conflicts_with = "check", conflicts_with = "clear")]
+	#[arg(short, long, conflicts_with = "check", conflicts_with = "clear")]
 	remove: bool,
 
 	/// Remove entire cache
-	#[clap(long, conflicts_with = "remove", conflicts_with = "check")]
+	#[arg(long, conflicts_with = "remove", conflicts_with = "check")]
 	clear: bool,
 
 	/// Ignore pre-existing cache
-	#[clap(short, long, conflicts_with = "force")]
+	#[arg(short, long, conflicts_with = "force")]
 	ignore: bool,
 
 	/// Force use of pre-existing cache
-	#[clap(short, long, conflicts_with = "ignore")]
+	#[arg(short, long, conflicts_with = "ignore")]
 	force: bool,
 
 	/// Date-time of expiry
-	#[clap(short, long, conflicts_with = "duration")]
+	#[arg(short, long, conflicts_with = "duration")]
 	expiry: Option<SystemTime>,
 
 	/// Duration before expiry
-	#[clap(short, long, conflicts_with = "expiry")]
+	#[arg(short, long, conflicts_with = "expiry")]
 	duration: Option<Duration>,
 
 	/// Program and arguments to run
-	#[clap(parse(from_os_str))]
+	#[arg(trailing_var_arg = true)]
 	command: Vec<OsString>,
 }
 
