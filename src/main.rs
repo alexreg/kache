@@ -19,7 +19,7 @@ use std::{
 };
 
 use anyhow::{anyhow, bail, Result};
-use clap::Parser;
+use clap::{ArgGroup, Parser};
 use humantime::{Duration, Timestamp as SystemTime};
 use speedy::{Readable, Writable};
 
@@ -40,26 +40,26 @@ struct CacheEntryInfo {
 	exit_code: i32,
 }
 
-// TODO: Use argument groups.
 // TODO: Add verbose flag and logging (see Rust CLI Book).
 /// Cache the output of a program.
 #[derive(Debug, Parser)]
 #[clap(author, version, about, long_about = None)]
+#[clap(group(ArgGroup::new("action")))]
 struct Cli {
 	/// Check for cache entry
-	#[arg(short, long, conflicts_with = "remove", conflicts_with = "clear")]
+	#[arg(short, long, group = "action")]
 	check: bool,
 
 	/// Remove cache entry
-	#[arg(short, long, conflicts_with = "check", conflicts_with = "clear")]
+	#[arg(short, long, group = "action")]
 	remove: bool,
 
 	/// Remove entire cache
-	#[arg(long, conflicts_with = "remove", conflicts_with = "check")]
+	#[arg(long, group = "action")]
 	clear: bool,
 
 	/// Purge cache of expired entries
-	#[arg(long, conflicts_with = "remove", conflicts_with = "check")]
+	#[arg(long, group = "action")]
 	purge: bool,
 
 	/// Ignore pre-existing cache
