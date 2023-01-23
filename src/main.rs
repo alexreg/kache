@@ -1,8 +1,3 @@
-#![feature(exit_status_error)]
-#![feature(let_chains)]
-#![feature(try_blocks)]
-#![feature(type_alias_impl_trait)]
-
 mod archivable;
 
 use std::{
@@ -280,45 +275,50 @@ fn main() -> Result<()> {
 	};
 
 	// Check if cache exists and has not yet expired.
-	if let Some(info) = info && info.valid() {
-		let mut stdout_cache = cache_entry.read_stdout()?;
-		let mut stderr_cache = cache_entry.read_stderr()?;
+	match info {
+		Some(info) if info.valid() => {
+			let mut stdout_cache = cache_entry.read_stdout()?;
+			let mut stderr_cache = cache_entry.read_stderr()?;
 
-		io::copy(&mut stdout_cache, &mut stdout)?;
-		io::copy(&mut stderr_cache, &mut stderr)?;
+			io::copy(&mut stdout_cache, &mut stdout)?;
+			io::copy(&mut stderr_cache, &mut stderr)?;
 
-		process::exit(info.exit_code);
-	} else {
-		let mut stdout_cache = cache_entry.write_stdout()?;
-		let mut stderr_cache = cache_entry.write_stderr()?;
+			process::exit(info.exit_code);
+		},
+		_ => {
+			let mut stdout_cache = cache_entry.write_stdout()?;
+			let mut stderr_cache = cache_entry.write_stderr()?;
 
-		let mut child = Command::new(program).args(args).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()?;
+			let mut child = Command::new(program).args(args).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()?;
 
-		let mut child_stdout = child.stdout.take().unwrap();
-		let mut child_stderr = child.stderr.take().unwrap();
+			let mut child_stdout = child.stdout.take().unwrap();
+			let mut child_stderr = child.stderr.take().unwrap();
 
-		let child_status = loop {
-			let stdout_count = child_stdout.read(&mut buf)?;
-			stdout.write_all(&buf[..stdout_count])?;
-			stdout_cache.write_all(&buf[..stdout_count])?;
+			let child_status = loop {
+				let stdout_count = child_stdout.read(&mut buf)?;
+				stdout.write_all(&buf[..stdout_count])?;
+				stdout_cache.write_all(&buf[..stdout_count])?;
 
-			let stderr_count = child_stderr.read(&mut buf)?;
-			stderr.write_all(&buf[..stderr_count])?;
-			stderr_cache.write_all(&buf[..stderr_count])?;
+				let stderr_count = child_stderr.read(&mut buf)?;
+				stderr.write_all(&buf[..stderr_count])?;
+				stderr_cache.write_all(&buf[..stderr_count])?;
 
-			if stdout_count == 0 && stderr_count == 0 && let Some(status) = child.try_wait()? {
-				break status;
+				if stdout_count == 0 && stderr_count == 0 {
+					if let Some(status) = child.try_wait()? {
+						break status;
+					}
+				}
+			};
+
+			if let Some(exit_code) = child_status.code() {
+				let info = CacheEntryInfo::new(cli.command, expiry, exit_code);
+				cache_entry.write_info(&info)?;
+
+				process::exit(exit_code);
+			} else {
+				cache_entry.remove()?;
 			}
-		};
-
-		if let Some(exit_code) = child_status.code() {
-			let info = CacheEntryInfo::new(cli.command, expiry, exit_code);
-			cache_entry.write_info(&info)?;
-
-			process::exit(exit_code);
-		} else {
-			cache_entry.remove()?;
-		}
+		},
 	}
 
 	Ok(())
