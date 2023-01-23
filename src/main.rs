@@ -13,7 +13,7 @@ use std::{
 	hash::{Hash, Hasher},
 	io::{self, Read, Write},
 	mem,
-	path::PathBuf,
+	path::{Path, PathBuf},
 	process::{self, Command, Stdio},
 	time,
 };
@@ -40,7 +40,6 @@ struct CacheEntryInfo {
 	exit_code: i32,
 }
 
-// TODO: Add `purge` option (to remove all expired entries).
 // TODO: Use argument groups.
 // TODO: Add verbose flag and logging (see Rust CLI Book).
 /// Cache the output of a program.
@@ -58,6 +57,10 @@ struct Cli {
 	/// Remove entire cache
 	#[arg(long, conflicts_with = "remove", conflicts_with = "check")]
 	clear: bool,
+
+	/// Purge cache of expired entries
+	#[arg(long, conflicts_with = "remove", conflicts_with = "check")]
+	purge: bool,
 
 	/// Ignore pre-existing cache
 	#[arg(short, long, conflicts_with = "force")]
@@ -93,6 +96,21 @@ impl CacheEntry {
 		let dir_path = Self::cache_dir();
 		fs::create_dir_all(&dir_path)?;
 		let info_path = dir_path.join(&id);
+		let stdout_path = info_path.with_extension("stdout");
+		let stderr_path = info_path.with_extension("stderr");
+
+		Ok(Self {
+			id,
+			info_path,
+			stdout_path,
+			stderr_path,
+		})
+	}
+
+	fn load<P: AsRef<Path>>(info_path: P) -> Result<Self> {
+		let id = info_path.as_ref().file_name().ok_or_else(|| anyhow!("`info_path` is not file"))?.to_string_lossy().into_owned();
+		let info_path = info_path.as_ref().to_owned();
+
 		let stdout_path = info_path.with_extension("stdout");
 		let stderr_path = info_path.with_extension("stderr");
 
@@ -157,21 +175,52 @@ impl CacheEntryInfo {
 	}
 }
 
+fn clear() -> Result<()> {
+	let cache_dir = CacheEntry::cache_dir();
+	match fs::remove_dir_all(&cache_dir) {
+		Ok(()) => {
+			println!("Cache directory removed: {}", cache_dir.display());
+			Ok(())
+		},
+		Err(err) if err.kind() == io::ErrorKind::NotFound => Err(anyhow!("Cache directory not found")),
+		Err(err) => Err(err.into()),
+	}
+}
+
+fn purge() -> Result<()> {
+	let cache_dir = CacheEntry::cache_dir();
+	match fs::read_dir(&cache_dir) {
+		Ok(dir) => {
+			for entry in dir {
+				let entry = entry?;
+				let path = entry.path();
+				if entry.file_type()?.is_file() && path.extension().is_none() {
+					let cache_entry = CacheEntry::load(&path)?;
+					let info = cache_entry.read_info()?;
+
+					if !info.valid() {
+						println!("Purging cache entry {}...", cache_entry.id);
+						cache_entry.remove()?;
+					}
+				}
+			}
+			println!("Cache directory purged of expired entries: {}", cache_dir.display());
+			Ok(())
+		},
+		Err(err) if err.kind() == io::ErrorKind::NotFound => Err(anyhow!("Cache directory not found")),
+		Err(err) => Err(err.into()),
+	}
+}
+
 fn main() -> Result<()> {
 	let cli = Cli::parse();
 
 	if cli.clear {
-		let cache_dir = CacheEntry::cache_dir();
-		match fs::remove_dir_all(&cache_dir) {
-			Ok(()) => {
-				println!("Cache directory removed: {}", cache_dir.display());
-				return Ok(());
-			},
-			Err(err) if err.kind() == io::ErrorKind::NotFound => {
-				bail!("Cache directory not found");
-			},
-			Err(err) => Err(err)?,
-		}
+		return clear();
+	}
+
+	if cli.purge {
+		return purge();
 	}
 
 	let cache_entry = CacheEntry::new(&cli.command)?;
